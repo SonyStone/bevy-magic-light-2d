@@ -82,8 +82,8 @@ fn setup(
 ) {
 
     // Utility functions to compute Z coordinate for floor and ground objects.
-    let get_floor_z  = | y | -> f32 { Z_BASE_FLOOR   - y / (SCREEN_SIZE.1 as f32) };
-    let get_object_z = | y | -> f32 { Z_BASE_OBJECTS - y / (SCREEN_SIZE.1 as f32) };
+    let get_floor_z  = | y | -> f32 { Z_BASE_FLOOR   - y / (SCREEN_SIZE.1) };
+    let get_object_z = | y | -> f32 { Z_BASE_OBJECTS - y / (SCREEN_SIZE.1) };
 
     // Maze map. 1 represents wall.
     let walls_info: &[&[u8]] = &[
@@ -205,7 +205,8 @@ fn setup(
         if c1 < 0 || c1 >= maze_cols {
             return 1;
         }
-        return walls_info[r1 as usize][c1 as usize];
+        
+        walls_info[r1 as usize][c1 as usize]
     };
 
     // Get atlas sprite index for wall.
@@ -213,74 +214,55 @@ fn setup(
         let r = r as i32;
         let c = c as i32;
 
-        let w_up    = get_wall_safe(r, c, (-1,  0));
-        let w_down  = get_wall_safe(r, c, ( 1,  0));
-        let w_left  = get_wall_safe(r, c, ( 0, -1));
-        let w_right = get_wall_safe(r, c, ( 0,  1));
-
-        let total_walls = w_up + w_down + w_left + w_right;
-
-        if total_walls == 4 {
-            return wall_atlas_cols * 0 + 0;
+        struct Wall {
+            up: u8,
+            down: u8,
+            left: u8,
+            right: u8,
         }
 
-        if total_walls == 3 {
-            if w_up == 0 {
-                return wall_atlas_cols * 1 + 0;
-            }
-            if w_left == 0 {
-                return wall_atlas_cols * 1 + 1;
-            }
-            if w_down == 0 {
-                return wall_atlas_cols * 1 + 2;
-            }
-            if w_right == 0 {
-                return wall_atlas_cols * 1 + 3;
+        impl Wall {
+            fn get_total(&self) -> u8 {
+                self.up + self.down + self.left + self.right
             }
         }
 
-        if total_walls == 2 {
-            if w_left == 1 && w_right == 1 {
-                return wall_atlas_cols * 2 + 0;
-            }
+        let wall = Wall {
+            up: get_wall_safe(r, c, (-1,  0)),
+            down: get_wall_safe(r, c, ( 1,  0)),
+            left: get_wall_safe(r, c, ( 0, -1)),
+            right: get_wall_safe(r, c, ( 0,  1)),
+        };
 
-            if w_up == 1 && w_down == 1 {
-                return wall_atlas_cols * 2 + 1;
-            }
+        let total_walls = wall.get_total();
 
-            if w_up == 1 && w_left == 1 {
-                return wall_atlas_cols * 2 + 2;
+        match total_walls {
+            4 => wall_atlas_cols * 0 + 0,
+            3 => match wall {
+                Wall { up: 0, .. } => wall_atlas_cols * 1 + 0,
+                Wall { left: 0, .. } => wall_atlas_cols * 1 + 0,
+                Wall { down: 0, .. } => wall_atlas_cols * 1 + 0,
+                Wall { right: 0, .. } => wall_atlas_cols * 1 + 0,
+                _ => panic!(),
             }
-
-            if w_down == 1 && w_left == 1 {
-                return wall_atlas_cols * 2 + 3;
+            2 => match wall {
+                Wall { left: 1, right: 1, .. } => wall_atlas_cols * 2 + 0,
+                Wall { up: 1, down: 1, .. } => wall_atlas_cols * 2 + 1,
+                Wall { up: 1, left: 1, .. } => wall_atlas_cols * 2 + 2,
+                Wall { down:  1, left: 1, .. } => wall_atlas_cols * 2 + 3,
+                Wall { up: 1, right: 1, .. } => wall_atlas_cols * 2 + 4,
+                Wall { down: 1, right: 1, .. } => wall_atlas_cols * 2 + 5,
+                _ => panic!(),
             }
-
-            if w_up == 1 && w_right == 1 {
-                return wall_atlas_cols * 2 + 4;
+            1 => match wall {
+                Wall { left: 1, .. } => wall_atlas_cols * 3 + 0,
+                Wall { down: 1, .. } => wall_atlas_cols * 3 + 1,
+                Wall { up: 1, .. } => wall_atlas_cols * 3 + 2,
+                Wall { right: 1, .. } => wall_atlas_cols * 3 + 3,
+                _ => panic!(),
             }
-
-            if w_down == 1 && w_right == 1 {
-                return wall_atlas_cols * 2 + 5;
-            }
+            _ => wall_atlas_cols * 4 + 0,
         }
-
-        if total_walls == 1 {
-            if w_left == 1 {
-                return wall_atlas_cols * 3 + 0;
-            }
-            if w_down == 1 {
-                return wall_atlas_cols * 3 + 1;
-            }
-            if w_up == 1 {
-                return wall_atlas_cols * 3 + 2;
-            }
-            if w_right == 1 {
-                return wall_atlas_cols * 3 + 3;
-            }
-        }
-
-        return wall_atlas_cols * 4 + 0;
     };
 
     // Add walls with occluder component.
@@ -828,48 +810,45 @@ fn system_control_mouse_light(
     let mut rng = thread_rng();
 
     // We only need to iter over first camera matched.
-    for (camera, camera_transform) in query_cameras.iter() {
+    let (camera, camera_transform) = query_cameras.iter().next().unwrap();
 
-        let window_opt = if let RenderTarget::Window(id) = camera.target {
-            windows.get(id)
-        } else {
-            windows.get_primary()
-        };
+    let window_opt = if let RenderTarget::Window(id) = camera.target {
+        windows.get(id)
+    } else {
+        windows.get_primary()
+    };
 
-        if let Some(window) = window_opt {
-            if let Some(screen_pos) = window.cursor_position() {
-                let window_size  = Vec2::new(window.width() as f32, window.height() as f32);
-                let mouse_ndc    = (screen_pos / window_size) * 2.0 - Vec2::ONE;
-                let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix().inverse();
-                let mouse_world  = ndc_to_world.project_point3(mouse_ndc.extend(-1.0));
+    if let Some(window) = window_opt {
+        if let Some(screen_pos) = window.cursor_position() {
+            let window_size  = Vec2::new(window.width() as f32, window.height() as f32);
+            let mouse_ndc    = (screen_pos / window_size) * 2.0 - Vec2::ONE;
+            let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix().inverse();
+            let mouse_world  = ndc_to_world.project_point3(mouse_ndc.extend(-1.0));
 
-                let (mut mouse_transform, mut mouse_color) = query_light.single_mut();
-                mouse_transform.translation = mouse_world.truncate().extend(1000.0);
+            let (mut mouse_transform, mut mouse_color) = query_light.single_mut();
+            mouse_transform.translation = mouse_world.truncate().extend(1000.0);
 
-                if mouse.just_pressed(MouseButton::Right) {
-                    mouse_color.color = Color::rgba(rng.gen(), rng.gen(), rng.gen(), 1.0);
-                }
-                if mouse.just_pressed(MouseButton::Left) && keyboard.pressed(KeyCode::LShift) {
-                    commands
-                        .spawn(SpatialBundle {
-                            transform: Transform {
-                                translation: mouse_world.truncate().extend(0.0),
-                                ..default()
-                            },
+            if mouse.just_pressed(MouseButton::Right) {
+                mouse_color.color = Color::rgba(rng.gen(), rng.gen(), rng.gen(), 1.0);
+            }
+            if mouse.just_pressed(MouseButton::Left) && keyboard.pressed(KeyCode::LShift) {
+                commands
+                    .spawn(SpatialBundle {
+                        transform: Transform {
+                            translation: mouse_world.truncate().extend(0.0),
                             ..default()
-                        })
-                        .insert(Name::new("point_light"))
-                        .insert(RenderLayers::all())
-                        .insert(OmniLightSource2D {
-                            jitter_intensity: 0.0,
-                            jitter_translation: 0.0,
-                            ..*mouse_color
-                        });
-                }
+                        },
+                        ..default()
+                    })
+                    .insert(Name::new("point_light"))
+                    .insert(RenderLayers::all())
+                    .insert(OmniLightSource2D {
+                        jitter_intensity: 0.0,
+                        jitter_translation: 0.0,
+                        ..*mouse_color
+                    });
             }
         }
-
-        break;
     }
 }
 
