@@ -199,6 +199,7 @@ fn setup(
     let get_wall_safe = |r: i32, c: i32, offset: (i32, i32)| {
         let r1 = r + offset.0;
         let c1 = c + offset.1;
+
         if r1 < 0 || r1 >= maze_rows {
             return 1;
         }
@@ -243,7 +244,7 @@ fn setup(
                 Wall { left: 0, .. } => wall_atlas_cols * 1 + 0,
                 Wall { down: 0, .. } => wall_atlas_cols * 1 + 0,
                 Wall { right: 0, .. } => wall_atlas_cols * 1 + 0,
-                _ => panic!(),
+                _ => wall_atlas_cols * 4 + 0,
             }
             2 => match wall {
                 Wall { left: 1, right: 1, .. } => wall_atlas_cols * 2 + 0,
@@ -252,14 +253,14 @@ fn setup(
                 Wall { down:  1, left: 1, .. } => wall_atlas_cols * 2 + 3,
                 Wall { up: 1, right: 1, .. } => wall_atlas_cols * 2 + 4,
                 Wall { down: 1, right: 1, .. } => wall_atlas_cols * 2 + 5,
-                _ => panic!(),
+                _ => wall_atlas_cols * 4 + 0,
             }
             1 => match wall {
                 Wall { left: 1, .. } => wall_atlas_cols * 3 + 0,
                 Wall { down: 1, .. } => wall_atlas_cols * 3 + 1,
                 Wall { up: 1, .. } => wall_atlas_cols * 3 + 2,
                 Wall { right: 1, .. } => wall_atlas_cols * 3 + 3,
-                _ => panic!(),
+                _ => wall_atlas_cols * 4 + 0,
             }
             _ => wall_atlas_cols * 4 + 0,
         }
@@ -812,10 +813,9 @@ fn system_control_mouse_light(
     // We only need to iter over first camera matched.
     let (camera, camera_transform) = query_cameras.iter().next().unwrap();
 
-    let window_opt = if let RenderTarget::Window(id) = camera.target {
-        windows.get(id)
-    } else {
-        windows.get_primary()
+    let window_opt = match camera.target {
+        RenderTarget::Window(id) => windows.get(id),
+        _ => windows.get_primary(),
     };
 
     if let Some(window) = window_opt {
@@ -828,11 +828,12 @@ fn system_control_mouse_light(
             let (mut mouse_transform, mut mouse_color) = query_light.single_mut();
             mouse_transform.translation = mouse_world.truncate().extend(1000.0);
 
-            if mouse.just_pressed(MouseButton::Right) {
-                mouse_color.color = Color::rgba(rng.gen(), rng.gen(), rng.gen(), 1.0);
-            }
-            if mouse.just_pressed(MouseButton::Left) && keyboard.pressed(KeyCode::LShift) {
-                commands
+            match (mouse.just_pressed(MouseButton::Right), mouse.just_pressed(MouseButton::Left), keyboard.pressed(KeyCode::LShift)) {
+                (true, ..) => {
+                    mouse_color.color = Color::rgba(rng.gen(), rng.gen(), rng.gen(), 1.0);
+                },
+                (_, true, true) => {
+                    commands
                     .spawn(SpatialBundle {
                         transform: Transform {
                             translation: mouse_world.truncate().extend(0.0),
@@ -847,9 +848,12 @@ fn system_control_mouse_light(
                         jitter_translation: 0.0,
                         ..*mouse_color
                     });
-            }
-        }
-    }
+                },
+                _ => (),
+            };
+        };
+    };
+
 }
 
 #[rustfmt::skip]
@@ -861,6 +865,7 @@ fn system_move_camera(
 ) {
 
     let speed = 10.0;
+
 
     if keyboard.pressed(KeyCode::W) {
         camera_target.y += speed;
